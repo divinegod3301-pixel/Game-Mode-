@@ -19,7 +19,7 @@ jobs:
       - name: Extract Android project ZIP
         run: |
           mkdir project
-          unzip -q RealmeXT_GameMode_GitHub_Actions_APK_Project.zip -d project
+          unzip -q RealmeXT_GameMode_MAX_Universal_Android8Plus.zip -d project
           test -f project/settings.gradle.kts
 
       - name: Set up JDK 17
