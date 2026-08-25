@@ -1,51 +1,142 @@
-name: Build XT Game Mode APK
+name: MaiKanji APK
 
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
-
-permissions:
-  contents: read
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract Android project ZIP
+      - name: Extract MaiKanji source ZIP
+        shell: bash
         run: |
-          mkdir project
-          unzip -q RealmeXT_GameMode_MAX_Universal_Android8Plus.zip -d project
-          test -f project/settings.gradle.kts
+          set -e
 
-      - name: Set up JDK 17
+          MAIKANJI_JAPANESE_UI_UPDATED.zip"
+
+          echo "Looking for:"
+          echo "$ZIP_FILE"
+
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: ZIP file not found!"
+            echo ""
+            echo "Files currently in repository:"
+            find . -maxdepth 3 -type f | sort
+            exit 1
+          fi
+
+          rm -rf extracted
+          mkdir -p extracted
+
+          unzip -o "$ZIP_FILE" -d extracted
+
+          echo ""
+          echo "ZIP extracted successfully."
+          echo ""
+          find extracted -maxdepth 3 -type f | sort
+
+      - name: Find Android Gradle project
+        shell: bash
+        run: |
+          set -e
+
+          SETTINGS_FILE=$(find extracted -type f \
+            \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
+            -print -quit)
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: No Gradle settings file found."
+            find extracted -maxdepth 6 -type f | sort
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+
+          echo ""
+          echo "======================================"
+          echo "Gradle project found"
+          echo "======================================"
+          echo "$PROJECT_DIR"
+
+          if [ ! -d "$PROJECT_DIR/app" ]; then
+            echo ""
+            echo "ERROR: app module was not found."
+            echo ""
+            echo "Project directories:"
+            find "$PROJECT_DIR" -maxdepth 3 -type d | sort
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Gradle 8.11
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11"
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
 
-      - name: Build APK
-        working-directory: project
-        run: gradle :app:assembleDebug --no-daemon
+      - name: Build MaiKanji Debug APK
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -e
 
-      - name: Upload APK
+          echo "======================================"
+          echo "BUILDING MaiKanji"
+          echo "======================================"
+
+          echo "Current directory:"
+          pwd
+
+          echo ""
+          echo "Project files:"
+          ls -la
+
+          echo ""
+          echo "Gradle version:"
+          gradle --version
+
+          echo ""
+          echo "Starting Android build..."
+
+          gradle :app:assembleDebug --stacktrace
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -e
+
+          APK_PATH="${PROJECT_DIR}/app/build/outputs/apk/debug"
+
+          echo "Checking APK output..."
+
+          if ! find "$APK_PATH" -type f -name "*.apk" -print -quit | grep -q .; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo ""
+          echo "APK generated successfully:"
+          find "$APK_PATH" -type f -name "*.apk" -print
+
+      - name: Upload MaiKanji APK
         uses: actions/upload-artifact@v4
         with:
-          name: RealmeXT-GameMode-debug
-          path: project/app/build/outputs/apk/debug/app-debug.apk
+          name: MaiKanji-${{ github.run_number }}
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
