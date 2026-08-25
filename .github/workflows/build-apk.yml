@@ -19,15 +19,14 @@ jobs:
         run: |
           set -e
 
-          MAIKANJI_JAPANESE_UI_UPDATED.zip"
+          ZIP_FILE="MAIKANJI_JAPANESE_UI_EXACT_WIDGET_INSTANT.zip"
 
-          echo "Looking for:"
-          echo "$ZIP_FILE"
+          echo "Checking for ZIP..."
+          ls -lh "$ZIP_FILE"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ZIP file not found!"
-            echo ""
-            echo "Files currently in repository:"
+            echo "ERROR: $ZIP_FILE was not found in repository root."
+            echo "Repository files:"
             find . -maxdepth 3 -type f | sort
             exit 1
           fi
@@ -37,12 +36,13 @@ jobs:
 
           unzip -o "$ZIP_FILE" -d extracted
 
-          echo ""
-          echo "ZIP extracted successfully."
-          echo ""
+          echo "======================================"
+          echo "ZIP EXTRACTED"
+          echo "======================================"
+
           find extracted -maxdepth 3 -type f | sort
 
-      - name: Find Android Gradle project
+      - name: Find Gradle project
         shell: bash
         run: |
           set -e
@@ -52,24 +52,22 @@ jobs:
             -print -quit)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: No Gradle settings file found."
-            find extracted -maxdepth 6 -type f | sort
+            echo "ERROR: Gradle project was not found."
+            echo "Searching extracted ZIP:"
+            find extracted -maxdepth 7 -type f | sort
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
-          echo ""
           echo "======================================"
-          echo "Gradle project found"
+          echo "GRADLE PROJECT"
           echo "======================================"
           echo "$PROJECT_DIR"
 
           if [ ! -d "$PROJECT_DIR/app" ]; then
-            echo ""
-            echo "ERROR: app module was not found."
-            echo ""
-            echo "Project directories:"
+            echo "ERROR: app module not found."
+            echo "Directories:"
             find "$PROJECT_DIR" -maxdepth 3 -type d | sort
             exit 1
           fi
@@ -90,49 +88,59 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Build MaiKanji Debug APK
-        shell: bash
+      - name: Make Gradle wrapper executable
         working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+          fi
+
+      - name: Build MaiKanji Debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
         run: |
           set -e
 
           echo "======================================"
-          echo "BUILDING MaiKanji"
+          echo "BUILDING MAIKANJI"
           echo "======================================"
 
-          echo "Current directory:"
+          echo "Project directory:"
           pwd
 
           echo ""
-          echo "Project files:"
-          ls -la
+          echo "Gradle files:"
+          find . -maxdepth 2 -type f \
+            \( -name "*.gradle" -o -name "*.gradle.kts" -o -name "gradlew" \) \
+            | sort
 
           echo ""
-          echo "Gradle version:"
-          gradle --version
+          echo "Starting build..."
 
-          echo ""
-          echo "Starting Android build..."
-
-          gradle :app:assembleDebug --stacktrace
+          if [ -f "./gradlew" ]; then
+            ./gradlew :app:assembleDebug --stacktrace
+          else
+            gradle :app:assembleDebug --stacktrace
+          fi
 
       - name: Verify APK
         shell: bash
         run: |
           set -e
 
-          APK_PATH="${PROJECT_DIR}/app/build/outputs/apk/debug"
+          APK_DIR="${PROJECT_DIR}/app/build/outputs/apk/debug"
 
-          echo "Checking APK output..."
+          echo "======================================"
+          echo "CHECKING APK"
+          echo "======================================"
 
-          if ! find "$APK_PATH" -type f -name "*.apk" -print -quit | grep -q .; then
-            echo "ERROR: APK was not generated."
+          if ! find "$APK_DIR" -type f -name "*.apk" -print -quit | grep -q .; then
+            echo "ERROR: No APK was generated."
             exit 1
           fi
 
-          echo ""
-          echo "APK generated successfully:"
-          find "$APK_PATH" -type f -name "*.apk" -print
+          find "$APK_DIR" -type f -name "*.apk" -print
 
       - name: Upload MaiKanji APK
         uses: actions/upload-artifact@v4
