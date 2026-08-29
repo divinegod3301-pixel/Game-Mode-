@@ -1,78 +1,20 @@
-name: MaiKanji APK
+name: Build TYRO KANJI APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
+      - master
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Extract MaiKanji source ZIP
-        shell: bash
-        run: |
-          set -e
-
-          ZIP_FILE="MAIKANJI_JAPANESE_UI_EXACT_WIDGET_INSTANT.zip"
-
-          echo "Checking for ZIP..."
-          ls -lh "$ZIP_FILE"
-
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: $ZIP_FILE was not found in repository root."
-            echo "Repository files:"
-            find . -maxdepth 3 -type f | sort
-            exit 1
-          fi
-
-          rm -rf extracted
-          mkdir -p extracted
-
-          unzip -o "$ZIP_FILE" -d extracted
-
-          echo "======================================"
-          echo "ZIP EXTRACTED"
-          echo "======================================"
-
-          find extracted -maxdepth 3 -type f | sort
-
-      - name: Find Gradle project
-        shell: bash
-        run: |
-          set -e
-
-          SETTINGS_FILE=$(find extracted -type f \
-            \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
-            -print -quit)
-
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: Gradle project was not found."
-            echo "Searching extracted ZIP:"
-            find extracted -maxdepth 7 -type f | sort
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-
-          echo "======================================"
-          echo "GRADLE PROJECT"
-          echo "======================================"
-          echo "$PROJECT_DIR"
-
-          if [ ! -d "$PROJECT_DIR/app" ]; then
-            echo "ERROR: app module not found."
-            echo "Directories:"
-            find "$PROJECT_DIR" -maxdepth 3 -type d | sort
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -80,43 +22,55 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Set up Gradle
+      - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1"
 
-      - name: Make Gradle wrapper executable
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
+      - name: Find and extract project ZIP
         run: |
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
+          echo "Searching for ZIP file..."
+
+          ZIP_FILE=$(find . -type f -iname "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No ZIP file found!"
+            exit 1
           fi
 
-      - name: Build MaiKanji Debug APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
+          echo "Found ZIP: $ZIP_FILE"
+
+          mkdir -p extracted
+          unzip -o "$ZIP_FILE" -d extracted
+
+          echo "Extracted files:"
+          find extracted -maxdepth 3 -type f | head -100
+
+      - name: Find Gradle project root
         run: |
-          set -e
+          PROJECT_DIR=$(find extracted -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print -quit | xargs -r dirname)
 
-          echo "======================================"
-          echo "BUILDING MAIKANJI"
-          echo "======================================"
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Could not find settings.gradle or settings.gradle.kts"
+            exit 1
+          fi
 
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "Found Gradle project: $PROJECT_DIR"
+
+      - name: Show project structure
+        run: |
           echo "Project directory:"
-          pwd
+          echo "$PROJECT_DIR"
 
-          echo ""
-          echo "Gradle files:"
-          find . -maxdepth 2 -type f \
-            \( -name "*.gradle" -o -name "*.gradle.kts" -o -name "gradlew" \) \
-            | sort
+          ls -la "$PROJECT_DIR"
 
-          echo ""
-          echo "Starting build..."
+          echo "Settings file:"
+          find "$PROJECT_DIR" -maxdepth 1 -type f -name "settings.gradle*" -print
+
+      - name: Build Debug APK
+        run: |
+          cd "$PROJECT_DIR"
+
+          chmod +x gradlew 2>/dev/null || true
 
           if [ -f "./gradlew" ]; then
             ./gradlew :app:assembleDebug --stacktrace
@@ -124,27 +78,21 @@ jobs:
             gradle :app:assembleDebug --stacktrace
           fi
 
-      - name: Verify APK
-        shell: bash
+      - name: Find APK
         run: |
-          set -e
+          APK_FILE=$(find "$PROJECT_DIR" -type f -path "*/build/outputs/apk/debug/*.apk" | head -n 1)
 
-          APK_DIR="${PROJECT_DIR}/app/build/outputs/apk/debug"
-
-          echo "======================================"
-          echo "CHECKING APK"
-          echo "======================================"
-
-          if ! find "$APK_DIR" -type f -name "*.apk" -print -quit | grep -q .; then
-            echo "ERROR: No APK was generated."
+          if [ -z "$APK_FILE" ]; then
+            echo "ERROR: APK was not found!"
             exit 1
           fi
 
-          find "$APK_DIR" -type f -name "*.apk" -print
+          echo "APK_FILE=$APK_FILE" >> $GITHUB_ENV
+          echo "Found APK: $APK_FILE"
 
-      - name: Upload MaiKanji APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MaiKanji-${{ github.run_number }}
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          name: TYRO-KANJI-DEBUG-APK
+          path: ${{ env.APK_FILE }}
           if-no-files-found: error
