@@ -1,4 +1,4 @@
-name: Build TYRO KANJI APK
+name: Build RMX1921 Free Fire Boost APK
 
 on:
   workflow_dispatch:
@@ -6,15 +6,18 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      - name: Find and extract ZIP
+      - name: Find and extract Android project ZIP
         shell: bash
         run: |
           set -e
@@ -22,125 +25,64 @@ jobs:
           ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No ZIP file found."
+            echo "ERROR: No Android project ZIP found."
             exit 1
           fi
 
           echo "Using ZIP: $ZIP_FILE"
 
-          rm -rf extracted
-          mkdir -p extracted
+          mkdir -p android-project
+          unzip -q "$ZIP_FILE" -d android-project
 
-          unzip -q "$ZIP_FILE" -d extracted
+          echo "Extracted files:"
+          find android-project -maxdepth 3 -type f | head -100
 
-          echo "Extracted project:"
-          find extracted -maxdepth 3 -type f | sort
-
-      - name: Locate Android project
+      - name: Locate Gradle project
         shell: bash
         run: |
           set -e
 
-          PROJECT_DIR=$(find extracted \
-            -name "settings.gradle.kts" \
-            -type f \
-            -exec dirname {} \; | head -n 1)
+          PROJECT=$(find android-project -name "gradlew" -type f | head -n 1)
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: settings.gradle.kts not found."
+          if [ -z "$PROJECT" ]; then
+            echo "ERROR: gradlew not found inside ZIP."
             exit 1
           fi
 
-          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERROR: app/build.gradle.kts not found."
-            exit 1
-          fi
+          PROJECT_DIR=$(dirname "$PROJECT")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Android project found at:"
+          echo "Android project:"
           echo "$PROJECT_DIR"
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Install Android SDK
-        shell: bash
-        run: |
-          set -e
-
-          yes | sdkmanager --licenses >/dev/null || true
-
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
-        with:
-          gradle-version: "8.11.1"
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Verify project
+      - name: Make Gradle executable
+        run: chmod +x "$PROJECT_DIR/gradlew"
+
+      - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          echo "Project directory:"
-          pwd
-
-          echo "Gradle version:"
-          gradle --version
-
-          echo "Gradle files:"
-          find . -maxdepth 3 \
-            \( -name "*.gradle" -o -name "*.gradle.kts" \) \
-            -type f \
-            -print
-
-      - name: Clean project
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          gradle clean --stacktrace --no-daemon
-
-      - name: Build Debug APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          set -e
-
-          gradle :app:assembleDebug \
-            --stacktrace \
-            --no-daemon
+        run: ./gradlew --no-daemon assembleDebug
 
       - name: Find APK
-        working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk/debug \
+          find "$PROJECT_DIR/app/build/outputs/apk" \
             -type f \
             -name "*.apk" \
-            | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
-
-          echo "APK generated successfully:"
-          ls -lh "$APK"
+            -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TYRO-KANJI-APK-${{ github.run_number }}
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          name: RMX1921-FreeFire-Boost-APK
+          path: "**/app/build/outputs/apk/debug/*.apk"
           if-no-files-found: error
